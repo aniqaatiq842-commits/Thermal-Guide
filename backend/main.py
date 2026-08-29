@@ -65,7 +65,6 @@ class ActivityRequest(BaseModel):
 
 @app.get("/")
 def home():
-
     return {
         "message": "ThermalGuide backend is running",
         "fortyguard_configured": bool(FORTYGUARD_API_KEY),
@@ -153,8 +152,12 @@ def get_fortyguard_data(
 
     today = datetime.now().strftime("%Y-%m-%d")
 
-    # Validate time
+    # --------------------------------------------------------
+    # Validate requested time
+    # --------------------------------------------------------
+
     try:
+
         datetime.strptime(
             requested_time,
             "%H:%M"
@@ -169,7 +172,6 @@ def get_fortyguard_data(
         )
 
         start_time = "14:00"
-
 
     # --------------------------------------------------------
     # Environmental Parameters
@@ -195,7 +197,6 @@ def get_fortyguard_data(
 
     }
 
-
     headers = {
 
         "api-key": FORTYGUARD_API_KEY,
@@ -204,7 +205,6 @@ def get_fortyguard_data(
 
     }
 
-
     print("Endpoint:")
     print(
         "https://api.fortyguard.com/v1/env_params"
@@ -212,19 +212,29 @@ def get_fortyguard_data(
 
     print("Submitting request...")
 
+    # --------------------------------------------------------
+    # Submit
+    # --------------------------------------------------------
 
-    response = requests.post(
+    try:
 
-        "https://api.fortyguard.com/v1/env_params",
+        response = requests.post(
 
-        headers=headers,
+            "https://api.fortyguard.com/v1/env_params",
 
-        json=payload,
+            headers=headers,
 
-        timeout=30
+            json=payload,
 
-    )
+            timeout=30
 
+        )
+
+    except requests.RequestException as error:
+
+        raise RuntimeError(
+            f"FortyGuard connection failed: {error}"
+        )
 
     print(
         "Submission status:",
@@ -236,6 +246,9 @@ def get_fortyguard_data(
         response.text[:1500]
     )
 
+    # --------------------------------------------------------
+    # HTTP errors
+    # --------------------------------------------------------
 
     if response.status_code == 401:
 
@@ -243,13 +256,11 @@ def get_fortyguard_data(
             "FortyGuard API key was rejected."
         )
 
-
     if response.status_code == 403:
 
         raise RuntimeError(
             "FortyGuard denied access to this endpoint."
         )
-
 
     if response.status_code >= 400:
 
@@ -259,12 +270,18 @@ def get_fortyguard_data(
             f"{response.text[:500]}"
         )
 
+    try:
 
-    submission = response.json()
+        submission = response.json()
 
+    except ValueError:
+
+        raise RuntimeError(
+            "FortyGuard returned invalid JSON."
+        )
 
     # --------------------------------------------------------
-    # Get activity ID
+    # Activity ID
     # --------------------------------------------------------
 
     activity_id = (
@@ -272,7 +289,6 @@ def get_fortyguard_data(
         .get("data", {})
         .get("activity_id")
     )
-
 
     if not activity_id:
 
@@ -285,12 +301,10 @@ def get_fortyguard_data(
             "FortyGuard did not return an activity_id."
         )
 
-
     print(
         "Activity ID:",
         activity_id
     )
-
 
     # ========================================================
     # POLLING
@@ -301,14 +315,14 @@ def get_fortyguard_data(
         + activity_id
     )
 
-
     print("\nWaiting for FortyGuard...")
-    print("Maximum wait: 5 minutes")
+    print("Maximum wait: 30 seconds")
 
+    # 15 × 2 seconds = 30 seconds
 
-    # 150 × 2 seconds = 5 minutes
+    max_attempts = 15
 
-    for attempt in range(150):
+    for attempt in range(max_attempts):
 
         try:
 
@@ -336,6 +350,9 @@ def get_fortyguard_data(
 
             continue
 
+        # ----------------------------------------------------
+        # Status HTTP error
+        # ----------------------------------------------------
 
         if status_response.status_code != 200:
 
@@ -352,15 +369,24 @@ def get_fortyguard_data(
 
             continue
 
+        try:
 
-        status_json = status_response.json()
+            status_json = status_response.json()
 
+        except ValueError:
+
+            print(
+                "Invalid JSON from FortyGuard status endpoint."
+            )
+
+            time.sleep(2)
+
+            continue
 
         data = status_json.get(
             "data",
             {}
         )
-
 
         status = str(
             data.get(
@@ -369,12 +395,10 @@ def get_fortyguard_data(
             )
         ).lower().strip()
 
-
         print(
-            f"[{attempt + 1}/150] "
+            f"[{attempt + 1}/{max_attempts}] "
             f"FortyGuard status: {status}"
         )
-
 
         # ----------------------------------------------------
         # COMPLETED
@@ -392,19 +416,13 @@ def get_fortyguard_data(
                 "result"
             )
 
-
-            # Some responses may put
-            # result elsewhere.
-
             if result is None:
 
                 result = data
 
-
             print(
                 "✅ FortyGuard analysis completed!"
             )
-
 
             print(
                 "Result keys:",
@@ -413,9 +431,7 @@ def get_fortyguard_data(
                 else "not-dict"
             )
 
-
             return result
-
 
         # ----------------------------------------------------
         # FAILED
@@ -432,21 +448,26 @@ def get_fortyguard_data(
             )
 
             print(
-                "Response:",
+                "FULL FORTYGUARD RESPONSE:",
                 status_json
             )
 
-            raise RuntimeError(
-                "FortyGuard processing failed."
-            )
+            # Keep the useful response visible
+            # instead of hiding it behind a generic error.
 
+            raise RuntimeError(
+                "FortyGuard processing failed. "
+                f"Activity ID: {activity_id}. "
+                f"FortyGuard response: {status_json}"
+            )
 
         # ----------------------------------------------------
         # WAIT
         # ----------------------------------------------------
 
-        time.sleep(2)
+        if attempt < max_attempts - 1:
 
+            time.sleep(2)
 
     # --------------------------------------------------------
     # TIMEOUT
@@ -454,7 +475,7 @@ def get_fortyguard_data(
 
     raise TimeoutError(
         "FortyGuard analysis did not complete "
-        "within 5 minutes."
+        "within 30 seconds."
     )
 
 
@@ -468,20 +489,12 @@ def extract_environment(result):
     print("🌍 ENVIRONMENT DATA")
     print("=" * 70)
 
-
-    # --------------------------------------------------------
-    # Locate result
-    # --------------------------------------------------------
-
     locations = result.get(
         "locations",
         []
     )
 
-
     if not locations:
-
-        # Try alternative structures
 
         if "data" in result:
 
@@ -491,7 +504,6 @@ def extract_environment(result):
                 "locations",
                 []
             )
-
 
     if not locations:
 
@@ -504,9 +516,7 @@ def extract_environment(result):
             "FortyGuard returned no location data."
         )
 
-
     location_data = locations[0]
-
 
     # --------------------------------------------------------
     # Temperature
@@ -515,10 +525,6 @@ def extract_environment(result):
     temperature_c = location_data.get(
         "temperature"
     )
-
-
-    # Some API responses may put
-    # temperature inside parameters.
 
     if temperature_c is None:
 
@@ -529,22 +535,18 @@ def extract_environment(result):
             "using fallback 30°C."
         )
 
-
     temperature_c = float(
         temperature_c
     )
-
 
     temperature_f = (
         temperature_c * 9 / 5
     ) + 32
 
-
     parameters = location_data.get(
         "parameters",
         {}
     )
-
 
     # --------------------------------------------------------
     # Helper
@@ -554,7 +556,6 @@ def extract_environment(result):
 
         value = parameters.get(key)
 
-
         if isinstance(value, list):
 
             if len(value) > 0:
@@ -563,36 +564,29 @@ def extract_environment(result):
 
             return None
 
-
         return value
-
 
     heat_index_c = get_first(
         "heat_index_celsius"
     )
 
-
     apparent_temperature_c = get_first(
         "apparent_temperature_celsius"
     )
-
 
     humidity = get_first(
         "relative_humidity_percent"
     )
 
-
     aqi = get_first(
         "aqi_us"
     )
 
-
     # --------------------------------------------------------
-    # Convert heat index
+    # Heat index
     # --------------------------------------------------------
 
     heat_index_f = None
-
 
     if heat_index_c is not None:
 
@@ -600,13 +594,11 @@ def extract_environment(result):
             float(heat_index_c) * 9 / 5
         ) + 32
 
-
     # --------------------------------------------------------
     # Apparent temperature
     # --------------------------------------------------------
 
     apparent_f = None
-
 
     if apparent_temperature_c is not None:
 
@@ -614,7 +606,6 @@ def extract_environment(result):
             float(apparent_temperature_c)
             * 9 / 5
         ) + 32
-
 
     environment = {
 
@@ -645,7 +636,6 @@ def extract_environment(result):
             else None
     }
 
-
     print(
         "Temperature:",
         environment["temperature"],
@@ -667,7 +657,6 @@ def extract_environment(result):
         environment["aqi"]
     )
 
-
     return environment
 
 
@@ -684,9 +673,7 @@ def calculate_risk(
     print("🧠 THERMAL DECISION AGENT")
     print("=" * 70)
 
-
     activity = activity.lower().strip()
-
 
     intensity = {
 
@@ -706,7 +693,6 @@ def calculate_risk(
         activity,
         2
     )
-
 
     if temperature >= 110:
 
@@ -728,9 +714,7 @@ def calculate_risk(
 
         base = 0
 
-
     score = base + intensity - 2
-
 
     if score >= 5:
 
@@ -748,7 +732,6 @@ def calculate_risk(
 
         risk = "Low"
 
-
     print(
         "Activity:",
         activity
@@ -763,7 +746,6 @@ def calculate_risk(
         "Risk:",
         risk
     )
-
 
     return risk
 
@@ -784,7 +766,6 @@ def generate_recommendation(
     print("✨ GEMINI RECOMMENDATION AGENT")
     print("=" * 70)
 
-
     temperature = environment[
         "temperature"
     ]
@@ -800,7 +781,6 @@ def generate_recommendation(
     aqi = environment[
         "aqi"
     ]
-
 
     # --------------------------------------------------------
     # Fallback
@@ -840,7 +820,6 @@ def generate_recommendation(
             "Stay hydrated and monitor conditions."
         )
 
-
     if not GEMINI_API_KEY:
 
         return {
@@ -856,7 +835,6 @@ def generate_recommendation(
 
         }
 
-
     # --------------------------------------------------------
     # Gemini
     # --------------------------------------------------------
@@ -865,11 +843,9 @@ def generate_recommendation(
 
         from google import genai
 
-
         client = genai.Client(
             api_key=GEMINI_API_KEY
         )
-
 
         prompt = f"""
 You are ThermalGuide's AI recommendation agent.
@@ -926,7 +902,6 @@ Keep the answer under 100 words.
 Return only the recommendation.
 """
 
-
         response = client.models.generate_content(
 
             model="gemini-3.5-flash-lite",
@@ -935,18 +910,15 @@ Return only the recommendation.
 
         )
 
-
         text = (
             response.text.strip()
             if response.text
             else fallback
         )
 
-
         print(
             "✅ Gemini recommendation generated."
         )
-
 
         return {
 
@@ -966,14 +938,12 @@ Return only the recommendation.
 
         }
 
-
     except Exception as error:
 
         print(
             "Gemini error:",
             repr(error)
         )
-
 
         return {
 
@@ -1007,7 +977,6 @@ def analyze(
     print("🔥 THERMALGUIDE ANALYSIS")
     print("#" * 70)
 
-
     try:
 
         # ====================================================
@@ -1019,7 +988,6 @@ def analyze(
                 request.location
             )
         )
-
 
         # ====================================================
         # 2. FORTYGUARD
@@ -1033,7 +1001,6 @@ def analyze(
             )
         )
 
-
         # ====================================================
         # 3. ENVIRONMENT
         # ====================================================
@@ -1043,7 +1010,6 @@ def analyze(
                 fortyguard_result
             )
         )
-
 
         # ====================================================
         # 4. DECISION
@@ -1065,7 +1031,6 @@ def analyze(
             request.activity
         )
 
-
         # ====================================================
         # 5. GEMINI
         # ====================================================
@@ -1082,7 +1047,6 @@ def analyze(
 
             risk
         )
-
 
         # ====================================================
         # RESPONSE
@@ -1179,15 +1143,12 @@ def analyze(
 
         }
 
-
         print("\n" + "#" * 70)
         print("✅ THERMALGUIDE ANALYSIS COMPLETE")
         print("#" * 70)
         print()
 
-
         return result
-
 
     except ValueError as error:
 
@@ -1201,7 +1162,6 @@ def analyze(
             detail=str(error)
         )
 
-
     except TimeoutError as error:
 
         print(
@@ -1213,7 +1173,6 @@ def analyze(
             status_code=504,
             detail=str(error)
         )
-
 
     except Exception as error:
 
@@ -1229,4 +1188,3 @@ def analyze(
                 + str(error)
             )
         )
-    
