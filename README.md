@@ -155,152 +155,16 @@ If Gemini is unavailable, ThermalGuide uses a deterministic fallback recommendat
 
 ## 🚀 Running ThermalGuide Locally
 
-### Prerequisites
 
-Make sure you have installed:
 
-* Python 3
-* Node.js
-* npm
 
 ---
 
-### 1. Clone the repository
 
-```bash
-git clone YOUR_GITHUB_REPOSITORY_URL
-cd "Thermal Guide"
 ```
 
 ---
 
-### 2. Set up the backend
-
-```powershell
-cd backend
-```
-
-Create and activate a virtual environment:
-
-```powershell
-python -m venv venv
-```
-
-Windows PowerShell:
-
-```powershell
-.\venv\Scripts\Activate.ps1
-```
-
-Install the Python dependencies:
-
-```powershell
-pip install -r ..\requirements.txt
-```
-
----
-
-### 3. Configure API keys
-
-Create a `.env` file inside the `backend` folder:
-
-```env
-FORTYGUARD_API_KEY=your_fortyguard_api_key
-GEMINI_API_KEY=your_gemini_api_key
-```
-
-**Never commit this file to GitHub.**
-
----
-
-### 4. Start the backend
-
-From the `backend` directory:
-
-```powershell
-uvicorn main:app --reload
-```
-
-The API will normally run at:
-
-```text
-http://127.0.0.1:8000
-```
-
----
-
-### 5. Start the frontend
-
-Open a second terminal:
-
-```powershell
-cd "C:\Users\PC WORLD\Downloads\Thermal Guide\frontend"
-```
-
-Install dependencies if required:
-
-```powershell
-npm install
-```
-
-Start the development server:
-
-```powershell
-npm run dev
-```
-
-The frontend will normally be available at:
-
-```text
-http://localhost:3000
-```
-
----
-
-## 🔐 Environment Variables
-
-ThermalGuide uses API credentials that should remain local.
-
-```env
-FORTYGUARD_API_KEY=your_key
-GEMINI_API_KEY=your_key
-```
-
-These values should **never be uploaded to GitHub**.
-
-The `.gitignore` file should exclude `.env` files.
-
----
-
-## 📡 Backend API
-
-### Health Check
-
-```http
-GET /
-```
-
-Returns the backend status and whether required services are configured.
-
-### Thermal Analysis
-
-```http
-POST /analyze
-```
-
-Example request:
-
-```json
-{
-  "location": "Austin, Texas",
-  "activity": "walking",
-  "time": "14:00"
-}
-```
-
-The API returns environmental information, thermal risk, AI recommendation, coordinates, and agent status.
-
----
 
 ## 🧠 Risk Classification
 
@@ -369,9 +233,3 @@ The goal is to transform complex environmental information into simple, contextu
 This project is being developed as an AI-powered climate-health application combining:
 
 **Climate Data + AI + Decision Intelligence + Human-Centered UX**
-
----
-
-## 📄 License
-
-This project is currently intended for educational, research, and hackathon development.
